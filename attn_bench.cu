@@ -11,6 +11,10 @@ int main(void)
 	__half *q_hbm;
 	__half *kvk,*kvv;
 	__half *q;
+	float qq;
+	float kk;
+
+	float *attention_scores;
 	int i, j, d, sz, num_tokens;
 	cudaError_t err;
 
@@ -27,9 +31,10 @@ int main(void)
 	}
 
 	for (j = 0; j < d; j++) {
-		q[j] = (__half) ((float) rand()/ (float) RAND_MAX) * (__half) 1.0;
+		q[j] = (__half) (((float) rand()/ (float) RAND_MAX) - 0.5) * (__half) 1.0;
 	}
 
+	printf("Q initialized\n");
 	k = (__half *) malloc(sz);
 	if (k == NULL) {
 		fprintf(stderr, "malloc failed\n");
@@ -38,15 +43,37 @@ int main(void)
 
 	for (i = 0; i < num_tokens; i++) {
 		kvk = (__half *) (k + i * d * 2);
-		for (j = 0; j < d; j++) {
-			kvk[j] = (__half) ((float) rand()/ (float) RAND_MAX) * (__half) 1.0;
-		}
+		for (j = 0; j < d; j++)
+			kvk[j] = (__half) (((float) rand()/ (float) RAND_MAX) - 0.5) * (__half) 1.0;
+		
 		kvv = kvk + d;
-		for (j = 0; j < d; j++) {
-			kvv[j] = (__half) ((float) rand()/ (float) RAND_MAX) * (__half) 1.0;
-		}
+		for (j = 0; j < d; j++)
+			kvv[j] = (__half) (((float) rand()/ (float) RAND_MAX) - 0.5) * (__half) 1.0;
+		
 	}
+	printf("K & V initialized\n");
 
+	attention_scores = (float *) malloc(num_tokens * sizeof(float));
+	if (attention_scores == NULL) {
+		fprintf(stderr, "malloc failed\n");
+		return 1;
+	}
+		
+	printf("Attention scores \n");
+	for (i = 0; i < num_tokens; i++) {
+		attention_scores[i] = 0.0;
+
+		kvk = (__half *) (k + i * d * 2);
+		for (j = 0; j < d; j++) {
+			qq = (float) q[j];
+			kk = (float) kvk[j];
+			attention_scores[i] = attention_scores[i] + (qq * kk);
+		}
+		printf("[%d]:%6.2f  ", i, attention_scores[i]);
+	}
+	
+	printf("Success!\n");
+#if 0
 	err = cudaMalloc(&q_hbm, d * sizeof(__half));
 	if (err != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed: %s\n",
@@ -90,6 +117,7 @@ int main(void)
 			cudaGetErrorString(err));
 		return 1;
 	}
+#endif
 
 	return 0;
 }
