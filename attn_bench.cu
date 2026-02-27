@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
@@ -13,8 +14,11 @@ int main(void)
 	__half *q;
 	float qq;
 	float kk;
+	float max, total, total2;
 
-	float *attention_scores;
+	float *attn_logits_raw;
+	float *attn_logits;
+	float *attn_weights;
 	int i, j, d, sz, num_tokens;
 	cudaError_t err;
 
@@ -53,26 +57,67 @@ int main(void)
 	}
 	printf("K & V initialized\n");
 
-	attention_scores = (float *) malloc(num_tokens * sizeof(float));
-	if (attention_scores == NULL) {
+	attn_logits_raw = (float *) malloc(num_tokens * sizeof(float));
+	if (attn_logits_raw == NULL) {
 		fprintf(stderr, "malloc failed\n");
 		return 1;
 	}
 		
 	printf("Attention scores \n");
 	for (i = 0; i < num_tokens; i++) {
-		attention_scores[i] = 0.0;
+		attn_logits_raw[i] = 0.0;
 
 		kvk = (__half *) (k + i * d * 2);
 		for (j = 0; j < d; j++) {
 			qq = (float) q[j];
 			kk = (float) kvk[j];
-			attention_scores[i] = attention_scores[i] + (qq * kk);
+			attn_logits_raw[i] = attn_logits_raw[i] + (qq * kk);
 		}
-		printf("[%d]:%6.2f  ", i, attention_scores[i]);
+		if ((i % 32) == 0)
+			printf("[%3d]:%6.2f  ", i, attn_logits_raw[i]);
 	}
+	printf("\n");
+
+	attn_logits = (float *) malloc(num_tokens * sizeof(float));
+	if (attn_logits == NULL) {
+		fprintf(stderr, "malloc failed\n");
+		return 1;
+	}
+
+	printf("Scaled logits \n");
+	for (i = 0; i < num_tokens; i++) {
+		attn_logits[i] = attn_logits_raw[i] / sqrt(d);
+		if ((i % 32) == 0)
+			printf("[%3d]:%6.2f  ", i, attn_logits[i]);
+	}
+	printf("\n");
 	
+	attn_weights = (float *) malloc(num_tokens * sizeof(float));
+	if (attn_weights == NULL) {
+		fprintf(stderr, "malloc failed\n");
+		return 1;
+	}
+	max = 0;
+	for (i = 0; i < num_tokens; i++) {
+		if (attn_logits[i] > max) 
+			max = attn_logits[i];
+	}
+
+	total = 0;
+	for (i = 0; i < num_tokens; i++) {
+		total = total + exp(attn_logits[i] - max);
+	}
+
+	total2 = 0;
+	for (i = 0; i < num_tokens; i++) {
+		attn_weights[i] = exp(attn_logits[i] - max) / total;
+		total2 = total2 + attn_weights[i];
+		printf("[%3d]:%13.10f %13.10f \n", i, attn_weights[i], total2);
+	}
+	printf("\n");
+
 	printf("Success!\n");
+
 #if 0
 	err = cudaMalloc(&q_hbm, d * sizeof(__half));
 	if (err != cudaSuccess) {
