@@ -14,11 +14,13 @@ int main(void)
 	__half *q;
 	float qq;
 	float kk;
+	float vv;
 	float max, total, total2;
 
 	float *attn_logits_raw;
 	float *attn_logits;
 	float *attn_weights;
+	float *attn_output;
 	int i, j, d, sz, num_tokens;
 	cudaError_t err;
 
@@ -112,7 +114,26 @@ int main(void)
 	for (i = 0; i < num_tokens; i++) {
 		attn_weights[i] = exp(attn_logits[i] - max) / total;
 		total2 = total2 + attn_weights[i];
-		printf("[%3d]:%13.10f %13.10f \n", i, attn_weights[i], total2);
+		if ((i % 32) == 0)
+			printf("[%3d]:%13.10f/%13.10f \n", i, attn_weights[i], total2);
+	}
+
+	attn_output = (float *) malloc(num_tokens * sizeof(float));
+	if (attn_output == NULL) {
+		fprintf(stderr, "malloc failed\n");
+		return 1;
+	}
+
+	printf("Attention outputs\n");
+	for (i = 0; i < num_tokens; i++) {
+		kvv = (__half *) (k + i * d * 2 + d);
+		attn_output[i] = 0;
+		for (j = 0; j < d; j++) {
+			kk = (float) kvv[j];
+			attn_output[i] = attn_output[i] + (attn_weights[i] * kk);
+		}
+		if ((i % 32) == 0)
+			printf("[%3d]:%13.10f/%13.10f \n", i, attn_weights[i], attn_output[i]);
 	}
 	printf("\n");
 
