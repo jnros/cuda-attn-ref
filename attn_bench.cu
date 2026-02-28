@@ -2,14 +2,13 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-#include <math_functions.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 
 __global__
 void attn(__half *KV, 
 		__half *Q, 
-		float *scratch, //logits raw, logits, weights
+		float *scratch, //logits_raw, logits, weights
 		int num_tokens, 
 		int d,
 		float *output)
@@ -57,20 +56,19 @@ void attn(__half *KV,
 	}
 	printf("\n");
 	
-	max = 0;
-	for (i = 0; i < num_tokens; i++) {
+	max = attn_logits[0];
+	for (i = 1; i < num_tokens; i++)
 		if (attn_logits[i] > max) 
 			max = attn_logits[i];
-	}
 
 	total = 0;
 	for (i = 0; i < num_tokens; i++) {
-		total = total + exp(attn_logits[i] - max);
+		total = total + expf(attn_logits[i] - max);
 	}
 
 	total2 = 0;
 	for (i = 0; i < num_tokens; i++) {
-		attn_weights[i] = exp(attn_logits[i] - max) / total;
+		attn_weights[i] = expf(attn_logits[i] - max) / total;
 		total2 = total2 + attn_weights[i];
 		if ((i % 32) == 0)
 			printf("[%3d]:%13.10f/%13.10f \n", i, attn_weights[i], total2);
@@ -93,51 +91,6 @@ void attn(__half *KV,
 			printf("\n");
 	}
 
-#if 0
-	err = cudaMalloc(&q_hbm, d * sizeof(__half));
-	if (err != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed: %s\n",
-			cudaGetErrorString(err));
-		return;
-	}
-
-	err = cudaMemcpy(q_hbm, q, d * sizeof(__half), cudaMemcpyHostToDevice);
-	if (err != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy failed: %s\n",
-			cudaGetErrorString(err));
-		return;
-	}
-
-	err = cudaMalloc(&ptr, sz);
-	if (err != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed: %s\n",
-			cudaGetErrorString(err));
-		return;
-	}
-	kv_hbm = ptr;
-
-	err = cudaMemcpy(kv_hbm, k, sz, cudaMemcpyHostToDevice);
-	if (err != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy failed: %s\n",
-			cudaGetErrorString(err));
-		return;
-	}
-	printf("Success!\n");	
-
-	err = cudaFree(q_hbm);
-	if (err != cudaSuccess) {
-		fprintf(stderr, "cudaFree failed: %s\n",
-			cudaGetErrorString(err));
-		return;
-	}
-
-	err = cudaFree(ptr);
-	if (err != cudaSuccess) {
-		fprintf(stderr, "cudaFree failed: %s\n",
-			cudaGetErrorString(err));
-		return;
-	}
-#endif
 	printf("Success!\n");
 }
 
@@ -159,7 +112,7 @@ int main(void)
 	d = 64;
 	sz = num_tokens * 2 * d * sizeof(__half);
 
-	q = (half *) malloc(d * sizeof(__half));
+	q = (__half *) malloc(d * sizeof(__half));
 	if (q == NULL) {
 		fprintf(stderr, "malloc failed\n");
 		return 1;
@@ -175,7 +128,7 @@ int main(void)
 		q[j] = (__half) (((float) rand()/ (float) RAND_MAX) - 0.5) * (__half) 1.0;
 	}
 
-	k = (half *) malloc(sz);
+	k = (__half *) malloc(sz);
 	if (k == NULL) {
 		fprintf(stderr, "malloc failed\n");
 		return 1;
@@ -187,6 +140,9 @@ int main(void)
 		return 1;
 	}
 
+	// KV dimens [num_tokens][2][d]
+	// Packed as K then V per token, all 16 bit
+	// Output layout 32 bit float [d]
 	for (i = 0; i < num_tokens; i++) {
 		kvk = (__half *) (k + i * d * 2);
 		for (j = 0; j < d; j++)
@@ -199,6 +155,7 @@ int main(void)
 	}
 	printf("K & V initialized\n");
 
+	// scratch pad [raw logits, logits, attn weights], each float[num_tokens]
 	err = cudaMalloc(&scr_hbm, 3 * num_tokens * sizeof(float));
 	if (err != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed: %s\n",
@@ -206,7 +163,7 @@ int main(void)
 		return 1;
 	}
 
-	err = cudaMalloc(&out_hbm, num_tokens * sizeof(float));
+	err = cudaMalloc(&out_hbm, d * sizeof(float));
 	if (err != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed: %s\n",
 			cudaGetErrorString(err));
@@ -228,12 +185,25 @@ int main(void)
 	}
 
    	attn<<<1,1>>>(k_hbm, q_hbm, scr_hbm, num_tokens, d, out_hbm);
-	cudaDeviceSynchronize();
+	
+	err = cudaGetLastError();
+	if (err != cudaSuccess) {
+    		fprintf(stderr, "kernel launch failed: %s\n", cudaGetErrorString(err));
+    		return 1;
+	}
+
+	err = cudaDeviceSynchronize();
+	if (err != cudaSuccess) {
+		fprintf(stderr, "kernel sync failed: %s\n", cudaGetErrorString(err));
+		return 1;
+	}
 
 	cudaFree(q_hbm);
 	cudaFree(k_hbm);
 	cudaFree(scr_hbm);
 	cudaFree(out_hbm);
-	
+
+	free(q);
+	free(k);
 	return 0;
 }
