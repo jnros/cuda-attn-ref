@@ -6,6 +6,40 @@
 #include <cuda_fp16.h>
 
 __global__
+void attn_logits(__half *KV, 
+		__half *Q, 
+		float *scratch, //logits_raw, logits, weights
+		int num_tokens, 
+		int d,
+		float *output)
+{
+	int i, j;
+	float kk;
+	float qq;
+	float sum;
+	float *attn_logits_raw;
+	float *attn_logits;
+	__half *kvk,*kvv;
+
+	i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i > num_tokens) 
+		return;
+
+	kvk = (__half *) (KV + i * d * 2);
+	sum = 0;	
+	for (j = 0; j < d; j++) {
+		qq = (float) Q[j];
+		kk = (float) kvk[j];
+		sum = sum + (qq * kk);
+	}
+
+	attn_logits_raw = (float *) scratch;
+	attn_logits_raw = (float *) scratch + num_tokens;
+	attn_logits_raw[i] = sum;
+	attn_logits[i] = sum / sqrtf((float) d);
+}
+
+__global__
 void attn(__half *KV, 
 		__half *Q, 
 		float *scratch, //logits_raw, logits, weights
@@ -27,7 +61,6 @@ void attn(__half *KV,
 	attn_logits_raw = (float *) scratch;
 	attn_logits = (float *) scratch + num_tokens;
 	attn_weights = (float *) scratch + 2*num_tokens;
-	printf("Attention scores \n");
 	for (i = 0; i < num_tokens; i++) {
 		attn_logits_raw[i] = 0.0;
 		attn_logits[i] = 0.0;
@@ -86,7 +119,7 @@ void attn(__half *KV,
 		}
 	}
 	for (j = 0; j < d; j++) {
-		printf("%03d %13.10f ",j,output[j]);
+		printf("[%03d] %13.10f ",j,output[j]);
 		if ((j % 4) == 3)
 			printf("\n");
 	}
