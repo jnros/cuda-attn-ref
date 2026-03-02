@@ -10,8 +10,7 @@ void attn_logits(__half *KV,
 		__half *Q, 
 		float *scratch, //logits_raw, logits, weights
 		int num_tokens, 
-		int d,
-		float *output)
+		int d)
 {
 	int i, j;
 	float kk;
@@ -19,11 +18,13 @@ void attn_logits(__half *KV,
 	float sum;
 	float *attn_logits_raw;
 	float *attn_logits;
-	__half *kvk,*kvv;
+	__half *kvk;
 
 	i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i > num_tokens) 
+	if (i >= num_tokens) 
 		return;
+	if ((i % 4) == 1)
+		printf("attn_logits thread i = %3d ", i);
 
 	kvk = (__half *) (KV + i * d * 2);
 	sum = 0;	
@@ -34,25 +35,21 @@ void attn_logits(__half *KV,
 	}
 
 	attn_logits_raw = (float *) scratch;
-	attn_logits_raw = (float *) scratch + num_tokens;
+	attn_logits = (float *) scratch + num_tokens;
 	attn_logits_raw[i] = sum;
 	attn_logits[i] = sum / sqrtf((float) d);
 }
 
 __global__
 void attn(__half *KV, 
-		__half *Q, 
 		float *scratch, //logits_raw, logits, weights
 		int num_tokens, 
 		int d,
 		float *output)
 {
-	__half *kvk,*kvv;
-	float qq;
-	float kk;
+	__half *kvv;
 	float vv;
 	float max, total, total2;
-
 	float *attn_logits_raw;
 	float *attn_logits;
 	float *attn_weights;
@@ -60,33 +57,12 @@ void attn(__half *KV,
 	
 	attn_logits_raw = (float *) scratch;
 	attn_logits = (float *) scratch + num_tokens;
-	attn_weights = (float *) scratch + 2*num_tokens;
-	for (i = 0; i < num_tokens; i++) {
-		attn_logits_raw[i] = 0.0;
-		attn_logits[i] = 0.0;
-		attn_weights[i] = 0.0;
-	}
-	for (i = 0; i < d; i++)
-		output[i] = 0.0;
-
-	for (i = 0; i < num_tokens; i++) {
-		kvk = (__half *) (KV + i * d * 2);
-		for (j = 0; j < d; j++) {
-			qq = (float) Q[j];
-			kk = (float) kvk[j];
-			attn_logits_raw[i] = attn_logits_raw[i] + (qq * kk);
-		}
-		if ((i % 32) == 0)
-			printf("[%3d]:%6.2f  ", i, attn_logits_raw[i]);
-	}
-	printf("\n");
+	attn_weights = (float *) scratch + 2 * num_tokens;
 
 	printf("Scaled logits \n");
-	for (i = 0; i < num_tokens; i++) {
-		attn_logits[i] = attn_logits_raw[i] / sqrtf((float) d);
+	for (i = 0; i < num_tokens; i++) 
 		if ((i % 32) == 0)
 			printf("[%3d]:%6.2f  ", i, attn_logits[i]);
-	}
 	printf("\n");
 	
 	max = attn_logits[0];
@@ -137,6 +113,7 @@ int main(void)
 	float *scr_hbm;
 	float *out_hbm;
 	int i, j, d, sz, num_tokens;
+	int block, grid;
 	cudaError_t err;
 
 	srand((unsigned int)time(NULL));
@@ -216,9 +193,18 @@ int main(void)
 			cudaGetErrorString(err));
 		return 1;
 	}
-
-   	attn<<<1,1>>>(k_hbm, q_hbm, scr_hbm, num_tokens, d, out_hbm);
 	
+	block = 256;
+	grid = (num_tokens + block - 1) / block;
+
+	attn_logits<<<grid, block>>>(k_hbm, q_hbm, scr_hbm, num_tokens, d);
+	err = cudaGetLastError();
+	if (err != cudaSuccess) {
+    		fprintf(stderr, "kernel launch failed: %s\n", cudaGetErrorString(err));
+    		return 1;
+	}
+
+   	attn<<<1,1>>>(k_hbm, scr_hbm, num_tokens, d, out_hbm);
 	err = cudaGetLastError();
 	if (err != cudaSuccess) {
     		fprintf(stderr, "kernel launch failed: %s\n", cudaGetErrorString(err));
