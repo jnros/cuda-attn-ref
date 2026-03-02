@@ -1,0 +1,69 @@
+[jnros@arch0 inf-cuda]$ cuda-gdb ./attn_bench
+NVIDIA (R) cuda-gdb 13.1
+Portions Copyright (C) 2007-2025 NVIDIA Corporation
+Based on GNU gdb 14.2
+Copyright (C) 2023 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Type "show copying" and "show warranty" for details.
+This CUDA-GDB was configured as "x86_64-pc-linux-gnu".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<https://forums.developer.nvidia.com/c/developer-tools/cuda-developer-tools/cuda-gdb>.
+Find the CUDA-GDB manual and other documentation resources online at:
+    <https://docs.nvidia.com/cuda/cuda-gdb/index.html>.
+
+For help, type "help".
+Type "apropos word" to search for commands related to "word"...
+Reading symbols from ./attn_bench...
+(cuda-gdb) b attn_logits
+Breakpoint 2 at 0x9a87: file /home/jnros/src/claude-code/inf-cuda/attn_bench.cu, line 14.
+(cuda-gdb) r
+Starting program: /home/jnros/src/claude-code/inf-cuda/attn_bench
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/usr/lib/libthread_db.so.1".
+[New Thread 0x7ffff19ff000 (LWP 18490)]
+[New Thread 0x7fffebfff000 (LWP 18491)]
+[Detaching after fork from child process 18492]
+[New Thread 0x7fffea5dd000 (LWP 18503)]
+[New Thread 0x7fffe9ddc000 (LWP 18504)]
+[New Thread 0x7fffddea1000 (LWP 18505)]
+K & V initialized
+[Switching focus to CUDA kernel 0, grid 1, block (0,0,0), thread (0,0,0), device 0, sm 0, warp 0, lane 0]
+
+CUDA thread hit Breakpoint 2.2, attn_logits<<<(1,1,1),(256,1,1)>>> (KV=0x7fffd3000200,
+    Q=0x7fffd3000000, scratch=0x7fffd3010200, num_tokens=256, d=64) at attn_bench.cu:23
+23		i = blockIdx.x * blockDim.x + threadIdx.x;
+(cuda-gdb) cuda thread (221,0,0)
+[Switching focus to CUDA kernel 0, grid 1, block (0,0,0), thread (221,0,0), device 0, sm 0, warp 6, lane 29]
+30		sum = 0;	
+(cuda-gdb) n
+31		for (j = 0; j < d; j++) {
+(cuda-gdb)
+32			qq = (float) Q[j];
+(cuda-gdb)
+33			kk = (float) kvk[j];
+(cuda-gdb)
+34			sum = sum + (qq * kk);
+(cuda-gdb) # key values in global mem for thread 221
+(cuda-gdb) x/64xh kvk
+0x7fffd300df00:	0x341c	0xa805	0x3277	0x2de7	0x3415	0xb36b	0xb085	0x3529
+0x7fffd300df10:	0x28e1	0xb685	0xb617	0xb5a4	0xb719	0x34e2	0xaee2	0xb293
+0x7fffd300df20:	0x302c	0x36c7	0xb025	0xaeaf	0x31b9	0x35a5	0xb414	0xac13
+0x7fffd300df30:	0x342d	0xb7a6	0x3277	0x313e	0xa927	0x2ea0	0x2cc6	0xb488
+0x7fffd300df40:	0xb6d9	0xb326	0x34f1	0x353c	0x29bc	0xb551	0x30ca	0xb6ac
+0x7fffd300df50:	0xb3ac	0x344e	0xb450	0xb1df	0x2cc0	0x2fdc	0x2f1d	0xb4ba
+0x7fffd300df60:	0x29f4	0x37b5	0x2e6a	0xb465	0x355a	0x3587	0x312d	0x2e19
+0x7fffd300df70:	0x35e1	0xb05c	0xb3b6	0xb188	0x377a	0x3557	0x299e	0xb75f
+(cuda-gdb) # query values in global mem for thread 221
+(cuda-gdb) x/64xh Q
+0x7fffd3000000:	0xadc9	0xb748	0x372f	0x2dc8	0x37e4	0x36b4	0x24b0	0x2f5c
+0x7fffd3000010:	0xac27	0xb656	0xafef	0xb255	0xb7bf	0xaebb	0x37c9	0xa250
+0x7fffd3000020:	0xb75d	0x34a0	0x36dc	0xa588	0xb505	0x9d4b	0x3437	0xb2d4
+0x7fffd3000030:	0xb7a2	0x2cc1	0xb772	0xb3b2	0xb151	0xb729	0xaba6	0x33ca
+0x7fffd3000040:	0xb672	0xaf18	0xb152	0xb68e	0xb224	0x35a2	0x3292	0x33c9
+0x7fffd3000050:	0x374c	0xb6b3	0xb746	0x378d	0xa618	0xb77d	0xa92c	0x2419
+0x7fffd3000060:	0x3524	0xaf26	0x37e9	0xb7e1	0x3621	0x3420	0xb296	0x367f
+0x7fffd3000070:	0xb160	0xb17a	0xb55a	0x314f	0xaf9a	0x2ec5	0xadce	0xa583
+(cuda-gdb)
