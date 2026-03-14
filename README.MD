@@ -1,6 +1,6 @@
 # inf-cuda
 
-Attention mechanism implementations in CUDA, built incrementally from scratch.
+Attention mechanism implementations in CUDA.
 Paged Attention impl matches how vLLM manages KV cache memory.
 
 ## Files
